@@ -250,7 +250,8 @@ fn parse_message_s(m: &str) -> ParseResult<SyslogMessage> {
                 Ok(n) => ProcIdType::PID(n),
                 Err(_) => ProcIdType::Name(proc_id_r),
             });
-            rest = maybe_rest;
+            // Consume the trailing space before the content part of the message
+            rest = maybe_expect_char!(maybe_rest, ' ').unwrap_or(maybe_rest);
             res
         }
         _ => None,
@@ -377,7 +378,7 @@ mod tests {
     #[test]
     fn test_good_match() {
         // we should be able to parse RFC3164 messages
-        let msg = parse_message("<134>Feb 18 20:53:31 haproxy[376]: I am a message");
+        let msg = parse_message("<134>Feb 18 20:53:31 hostname.local nginx: I am a message");
         assert!(!msg.is_err());
     }
 }
