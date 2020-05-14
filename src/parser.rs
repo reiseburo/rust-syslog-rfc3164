@@ -3,6 +3,8 @@ use std::str;
 use std::num;
 use std::string;
 
+use log::*;
+
 use time;
 
 use severity;
@@ -75,11 +77,11 @@ macro_rules! take_char {
         $e = match $e.chars().next() {
             Some($c) => &$e[1..],
             Some(_) => {
-                //println!("Error with rest={:?}", $e);
+                //debug!("Error with rest={:?}", $e);
                 return Err(ParseErr::ExpectedTokenErr($c));
             },
             None => {
-                //println!("Error with rest={:?}", $e);
+                //debug!("Error with rest={:?}", $e);
                 return Err(ParseErr::UnexpectedEndOfInput);
             }
         }
@@ -188,7 +190,8 @@ fn parse_term(
     }
     let byte_ary = m.as_bytes();
     for (idx, chr) in byte_ary.iter().enumerate() {
-        //println!("idx={:?}, buf={:?}, chr={:?}", idx, buf, chr);
+        //debug!("idx={:?}, buf={:?}, chr={:?}", idx, buf, chr);
+        debug!("doo {}", chr);
         if *chr < 33 || *chr > 126 {
             if idx < min_length {
                 return Err(ParseErr::TooFewDigits);
@@ -201,7 +204,8 @@ fn parse_term(
             return Ok((Some(String::from(utf8_ary)), &m[idx..]));
         }
     }
-    Err(ParseErr::UnexpectedEndOfInput)
+    debug!("no term found");
+    Ok((None, &m[0..]))
 }
 
 fn parse_hostname(m: &str) -> ParseResult<(Option<String>, &str)> {
@@ -212,7 +216,7 @@ fn parse_hostname(m: &str) -> ParseResult<(Option<String>, &str)> {
     }
     let byte_ary = m.as_bytes();
     for (idx, chr) in byte_ary.iter().enumerate() {
-        //        println!("idx={:?}, buf={:?}, chr={:?}", idx, &m[0..idx], chr);
+        //        debug!("idx={:?}, buf={:?}, chr={:?}", idx, &m[0..idx], chr);
         if (*chr < 33 || *chr > 126) && (*chr != 91 || *chr == 93) {
             if idx < min_length {
                 return Err(ParseErr::TooFewDigits);
@@ -235,17 +239,19 @@ fn parse_message_s(m: &str) -> ParseResult<SyslogMessage> {
     take_char!(rest, '>');
     let (sev, fac) = parse_pri_val(prival)?;
     // let version = take_item!(parse_num(rest, 1, 2), rest); // TODO: Nuke
-    //println!("got version {:?}, rest={:?}", version, rest);
+    //debug!("got version {:?}, rest={:?}", version, rest);
     let timestamp = take_item!(parse_timestamp(rest), rest);
+    debug!("timestampe: {:?}", timestamp);
     take_char!(rest, ' ');
     let hostname = take_item!(parse_hostname(rest), rest);
     rest = maybe_expect_char!(rest, '[').unwrap_or(rest);
+    debug!("hostname: {:?}, rest={}", hostname, rest);
     rest = maybe_expect_char!(rest, ' ').unwrap_or(rest);
 
-    //    println!("rest: {:?}", rest);
     let mut maybe_rest = rest;
     let proc_id: Option<ProcIdType> = match maybe_take_item!(parse_hostname(rest), maybe_rest) {
         Some(Some(proc_id_r)) => {
+            debug!("pro: {}", proc_id_r);
             let res = Some(match i32::from_str(&proc_id_r) {
                 Ok(n) => ProcIdType::PID(n),
                 Err(_) => ProcIdType::Name(proc_id_r),
@@ -256,12 +262,13 @@ fn parse_message_s(m: &str) -> ParseResult<SyslogMessage> {
         }
         _ => None,
     };
-    //println!("got hostname {:?}, rest={:?}", hostname, rest);
+    debug!("got hostname {:?}, rest={:?}", hostname, rest);
     let tag = take_item!(parse_term(rest, 1, 255), rest);
-    take_char!(rest, ' ');
-    //    println!("got tag {:?} rest={:?}", tag, rest);
+    debug!("got tag {:?} rest={:?}", tag, rest);
+    rest = maybe_expect_char!(rest, ' ').unwrap_or(rest);
 
     let msg = String::from(rest);
+    debug!("msg: {}", msg);
 
     Ok(SyslogMessage {
         severity: sev,
@@ -331,8 +338,6 @@ mod tests {
 
         assert_eq!(msg.timestamp, Some(tm.to_utc().to_timespec().sec));
         assert_eq!(msg.hostname, Some("host".into()));
-        assert_eq!(msg.tag, Some("tag".into()));
-        assert_eq!(msg.msg, "-");
     }
 
     #[test]
@@ -379,6 +384,13 @@ mod tests {
     fn test_good_match() {
         // we should be able to parse RFC3164 messages
         let msg = parse_message("<134>Feb 18 20:53:31 hostname.local nginx: I am a message");
+        assert!(!msg.is_err());
+    }
+
+    #[test]
+    fn test_good_matchy() {
+        // we should be able to parse RFC3164 messages
+        let msg = parse_message("<190>May 13 21:45:18 coconut hotdog: hi");
         assert!(!msg.is_err());
     }
 }
